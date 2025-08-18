@@ -7,6 +7,8 @@ set(CMAKE_CXX_STANDARD 20)
 
 # Set the CUDA Architectures
 set(CMAKE_CUDA_ARCHITECTURES native)
+
+# config compile_commands.json
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # include cutlass
@@ -23,3 +25,6 @@ foreach(file_path ${sources})
     add_executable("${target_name}" "${file_path}")
     target_include_directories("${target_name}" PRIVATE src)
 endforeach()
+
+# Copy compile_commands.json
+file(COPY ${CMAKE_BINARY_DIR}/compile_commands.json DESTINATION ${CMAKE_SOURCE_DIR})

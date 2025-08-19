@@ -1,7 +1,6 @@
 #include <iostream>
 
 #include "cutlass/cutlass.h"
-#include "cutlass/numeric_types.h"
 #include "cutlass/gemm/device/gemm.h"
 
 #include "util.cuh"
@@ -11,7 +10,8 @@ int main()
     using dtype = cutlass::half_t;
     int M = 128, N = 128, K = 128;
     dtype alpha{1.0f}, beta{0.0f};
-    auto [A, B, C, C_ref] = learn_util::create_random_tensors<dtype, cutlass::layout::RowMajor>(M, N, K, 42);
+    auto [A, B, C, C_ref] =
+        learn_util::create_random_tensors<dtype, cutlass::layout::RowMajor>(M, N, K, 42);
 
     using Gemm = cutlass::gemm::device::Gemm<
         dtype, cutlass::layout::RowMajor,

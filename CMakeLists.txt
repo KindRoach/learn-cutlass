@@ -26,5 +26,8 @@ foreach(file_path ${sources})
     target_include_directories("${target_name}" PRIVATE src)
 endforeach()
 
-# Copy compile_commands.json
-file(COPY ${CMAKE_BINARY_DIR}/compile_commands.json DESTINATION ${CMAKE_SOURCE_DIR})
+# Copy compile_commands.json if exists
+set(cc_file ${CMAKE_BINARY_DIR}/compile_commands.json)
+if(EXISTS ${cc_file})
+    file(COPY ${cc_file} DESTINATION ${CMAKE_SOURCE_DIR})
+endif()

@@ -1,13 +1,6 @@
-#include <cute/layout.hpp>
+#include <iostream>
 
-template <class Shape, class Stride>
-void print_layout_with_name(const cute::Layout<Shape, Stride>& layout, const std::string& name)
-{
-    using namespace cute;
-    print((name + " = ").c_str());
-    print(layout);
-    print("\n");
-}
+#include <cute/layout.hpp>
 
 int main()
 {
@@ -34,13 +27,13 @@ int main()
                                make_stride(4, make_stride(2, 1)));
     Layout s2xh4_col = make_layout(shape(s2xh4), LayoutLeft{});
 
-    print_layout_with_name(s8, "s8");
-    print_layout_with_name(d8, "d8");
-    print_layout_with_name(s2xs4, "s2xs4");
-    print_layout_with_name(s2xd4, "s2xd4");
-    print_layout_with_name(s2xd4_a, "s2xd4_a");
-    print_layout_with_name(s2xd4_col, "s2xd4_col");
-    print_layout_with_name(s2xd4_row, "s2xd4_row");
-    print_layout_with_name(s2xh4, "s2xh4");
-    print_layout_with_name(s2xh4_col, "s2xh4_col");
+    std::cout << "s8 = " << s8 << "\n";
+    std::cout << "d8 = " << d8 << "\n";
+    std::cout << "s2xs4 = " << s2xs4 << "\n";
+    std::cout << "s2xd4 = " << s2xd4 << "\n";
+    std::cout << "s2xd4_a = " << s2xd4_a << "\n";
+    std::cout << "s2xd4_col = " << s2xd4_col << "\n";
+    std::cout << "s2xd4_row = " << s2xd4_row << "\n";
+    std::cout << "s2xh4 = " << s2xh4 << "\n";
+    std::cout << "s2xh4_col = " << s2xh4_col << "\n";
 }

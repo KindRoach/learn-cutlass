@@ -1,4 +1,5 @@
 #include <iostream>
+#include <typeinfo>
 
 #include <cute/layout.hpp>
 
@@ -34,6 +35,16 @@ int main()
     using namespace cute;
 
     divide_witch_print(
+        Layout<Shape<_8, _8>>{},
+        Layout<Shape<_4, _4>>{}
+    );
+
+    divide_witch_print(
+        Layout<Shape<_8, _8>, Shape<_1, _8>>{},
+        Layout<Shape<_4, _4>, Shape<_1, _8>>{}
+    );
+
+    divide_witch_print(
         Layout<Shape<_4, _2, _3>, Shape<_2, _1, _8>>{},
         Layout<_4, _2>{}
     );
@@ -41,6 +52,11 @@ int main()
     divide_witch_print(
         Layout<Shape<_9, Shape<_4, _8>>, Shape<Int<59>, Shape<Int<13>, _1>>>{},
         Tile<Layout<_3, _3>, Layout<Shape<_2, _4>, Shape<_1, _8>>>{}
+    );
+
+    product_witch_print(
+        Layout<Shape<_2, _2>, Shape<_2, _1>>{},
+        Layout<Shape<_2, _3>, Shape<_1, _2>>{}
     );
 
     product_witch_print(

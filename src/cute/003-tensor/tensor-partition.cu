@@ -57,6 +57,26 @@ void outer_partition_with_print(Tensor A, Tiler tiler)
     }
 }
 
+template <class Tensor, class Layout>
+void tv_partition_with_print(Tensor A, Layout tv_layout)
+{
+    using namespace cute;
+
+    std::cout << "=============== tv partition ===============\n";
+
+    std::cout << "tv_layout = " << tv_layout << "\n";
+    std::cout << "\n";
+
+    std::cout << "A = ";
+    print_tensor(A);
+    std::cout << "\n";
+
+    auto tv = composition(A, tv_layout);
+    std::cout << "tv = A o tv_layout = ";
+    print_tensor(tv);
+    std::cout << "\n";
+}
+
 int main()
 {
     using namespace cute;
@@ -71,4 +91,9 @@ int main()
 
     inner_partition_with_print(A, tiler);
     outer_partition_with_print(A, tiler);
+
+    auto tv_layout = Layout<Shape<Shape<_2, _4>, Shape<_2, _2>>,
+                            Stride<Stride<_8, _1>, Stride<_4, _16>>>{};
+
+    tv_partition_with_print(A, tv_layout);
 }

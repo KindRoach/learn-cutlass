@@ -112,7 +112,7 @@ int main()
         A[i] = i;
     }
 
-    std::cout << "Source Tensor: ";
+    std::cout << "Source Tensor = ";
     print_tensor(A);
     std::cout << "\n";
 

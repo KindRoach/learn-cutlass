@@ -2,38 +2,7 @@
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 
-void print_layout_with_label(const char* label, const auto& layout)
-{
-    using namespace cute;
-    print(label);
-    print_layout(layout);
-    print("\n");
-}
-
-void print_copy_with_label(const char* label, const auto& copy)
-{
-    using namespace cute;
-    print(label);
-    print(copy);
-    print("\n");
-}
-
-void print_mma_with_label(const char* label, const auto& mma)
-{
-    using namespace cute;
-    print(label);
-    print(mma);
-    print("\n");
-}
-
-__host__ __device__
-void print_tensor_with_label(const char* label, const auto& tensor)
-{
-    using namespace cute;
-    print(label);
-    print_tensor(tensor);
-    print("\n");
-}
+#include "cute/utils.cuh"
 
 template <
     class T, class ProblemShape, class CtaTiler,
@@ -201,9 +170,9 @@ void cute_gemm(
     print_layout_with_label("Layout sA: ", sA_layout);
     print_layout_with_label("Layout sB: ", sB_layout);
 
-    print_copy_with_label("copyA: ", copyA);
-    print_copy_with_label("copyB: ", copyB);
-    print_mma_with_label("mmaC: ", mmaC);
+    print_with_label("copyA: ", copyA);
+    print_with_label("copyB: ", copyB);
+    print_with_label("mmaC: ", mmaC);
 
     // launch kernel
     dim3 dimBlock(size(mmaC));

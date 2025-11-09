@@ -24,9 +24,11 @@ foreach (file_path ${sources})
     add_executable("${target_name}" "${file_path}")
 
     # Include the src directory for headers
-    target_include_directories("${target_name}" PRIVATE "${src_root}")
-    target_include_directories("${target_name}" PRIVATE "${CMAKE_SOURCE_DIR}/cutlass/include")
-    target_include_directories("${target_name}" PRIVATE "${CMAKE_SOURCE_DIR}/cutlass/tools/util/include")
+    target_include_directories("${target_name}" PRIVATE "${src_root}"
+            "${CMAKE_SOURCE_DIR}/cpp-bench-utils/include"
+            "${CMAKE_SOURCE_DIR}/cutlass/include"
+            "${CMAKE_SOURCE_DIR}/cutlass/tools/util/include"
+    )
 
     # Set CUDA architectures
     set_property(TARGET ${target_name} PROPERTY CUDA_ARCHITECTURES native)
@@ -38,6 +40,6 @@ endforeach ()
 
 # Copy compile_commands.json if exists
 set(cc_file ${CMAKE_BINARY_DIR}/compile_commands.json)
-if(EXISTS ${cc_file})
+if (EXISTS ${cc_file})
     file(COPY ${cc_file} DESTINATION ${CMAKE_SOURCE_DIR})
-endif()
+endif ()

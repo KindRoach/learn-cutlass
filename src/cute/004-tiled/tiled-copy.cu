@@ -1,18 +1,14 @@
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
 
+#include <cpp-bench-utils/utils.hpp>
 #include <cute/tensor.hpp>
 
 #include "cute/utils.cuh"
 
 
-/// Vectorized copy kernel.
-///
-/// Uses `make_tiled_copy()` to perform a copy using vector instructions. This operation
-/// has the precondition that pointers are aligned to the vector size.
-///
 template <class TensorS, class TensorD, class CtaTiler, class Tiled_Copy>
-__global__ void copy_kernel_vectorized(TensorS S, TensorD D, CtaTiler cta_tiler, Tiled_Copy tiled_copy)
+__global__ void tiled_copy_kernel(TensorS S, TensorD D, CtaTiler cta_tiler, Tiled_Copy tiled_copy)
 {
     using namespace cute;
 
@@ -35,89 +31,111 @@ __global__ void copy_kernel_vectorized(TensorS S, TensorD D, CtaTiler cta_tiler,
     copy(tiled_copy, fragment, thr_tile_D);
 }
 
-/// Main function
-int main()
+template <typename T, cbu::matrix_layout dst_layout>
+void tiled_copy(
+    thrust::device_vector<T>& src,
+    thrust::device_vector<T>& dst,
+    size_t m, size_t n
+)
 {
     using namespace cute;
-    using Element = float;
 
-    // Global data shape
-    auto tensor_shape = make_shape(8, 16);
-    thrust::host_vector<Element> h_S(size(tensor_shape));
-    thrust::host_vector<Element> h_D(size(tensor_shape));
-
-    // Init values
-    for (size_t i = 0; i < h_S.size(); ++i)
-    {
-        h_S[i] = static_cast<Element>(i);
-        h_D[i] = Element{};
-    }
-
-    thrust::device_vector<Element> d_S = h_S;
-    thrust::device_vector<Element> d_D = h_D;
+    using DstLayout = std::conditional_t<
+        dst_layout == cbu::matrix_layout::row_major,
+        LayoutRight,
+        LayoutLeft
+    >;
 
     // warp global tensors
-    Tensor tensor_S = make_tensor(make_gmem_ptr(thrust::raw_pointer_cast(d_S.data())), make_layout(tensor_shape));
-    Tensor tensor_D = make_tensor(make_gmem_ptr(thrust::raw_pointer_cast(d_D.data())), make_layout(tensor_shape));
-    print_tensor_with_label("tensor_S: ", make_tensor(h_S.data(), tensor_shape));
+    Shape global_tensor_shape = make_shape(m, n);
+    Layout layout_src = make_layout(global_tensor_shape, LayoutRight{}); // row-major
+    Layout layout_dst = make_layout(global_tensor_shape, DstLayout{});
+    Tensor tensor_S = make_tensor(make_gmem_ptr(thrust::raw_pointer_cast(src.data())), layout_src);
+    Tensor tensor_D = make_tensor(make_gmem_ptr(thrust::raw_pointer_cast(dst.data())), layout_dst);
 
-    // Define a static block shape (also called cta shape) [M, N].
-    auto cta_tiler = make_shape(Int<4>{}, Int<8>{});
-    print_with_label("cta_tiler: ", cta_tiler);
-
-    // Check that the block shape evenly divides the tensor shape.
-    if (not evenly_divides(tensor_shape, cta_tiler))
+    // block tile shape / cta tiler
+    auto block_shape = make_shape(Int<128>{}, Int<64>{});
+    if (not evenly_divides(global_tensor_shape, block_shape))
     {
-        std::cerr << "Expected the block_shape to evenly divide the tensor shape." << std::endl;
-        return -1;
+        std::cerr << "Expected the block_shape to evenly divide the global tensor shape." << std::endl;
+        return;
     }
 
-    // Construct a TiledCopy with a specific access pattern.
-    //   This version uses a
-    //   (1) Layout-of-Threads to describe the number and arrangement of threads (e.g. row-major, col-major, etc),
-    //   (2) Layout-of-Values that each thread will access.
-
-    // Thread arrangement
-    Layout thr_layout = make_layout(make_shape(Int<1>{}, Int<8>{})); // (1,8) -> thr_idx
-    Layout val_layout = make_layout(make_shape(Int<4>{}, Int<1>{})); // (4,1) -> val_idx
-
-    // Define `AccessType` which controls the size of the actual memory access instruction.
-    // Copy multiple elements at a time for vectorized memory access.
-    using CopyOp = UniversalCopy<uint_byte_t<sizeof(Element) * size(val_layout)>>;
-    //using CopyOp = UniversalCopy<cutlass::AlignedArray<Element, size(val_layout)>>;  // A more generic type that supports many copy strategies
-    //using CopyOp = AutoVectorizingCopy;                                              // An adaptable-width instruction that assumes maximal alignment of inputs
-
-    // A Copy_Atom corresponds to one CopyOperation applied to Tensors of type Element.
-    using Atom = Copy_Atom<CopyOp, Element>;
-
-    // Construct tiled copy, a tiling of copy atoms.
-    //
-    // Note, this assumes the vector and thread layouts are aligned with contiguous data
-    // in GMEM. Alternative thread layouts are possible but may result in uncoalesced
-    // reads. Alternative value layouts are also possible, though incompatible layouts
-    // will result in compile time errors.
+    auto thr_layout = make_layout(make_shape(Int<32>{}, Int<8>{}), LayoutRight{}); // 256 threads
+    auto val_layout = make_layout(make_shape(Int<1>{}, Int<4>{})); // each thread copy 4 elements at a time
     TiledCopy tiled_copy = make_tiled_copy(
-        Atom{}, // Access strategy
-        thr_layout, // thread layout
-        val_layout); // value layout
-    print_with_label("tiled_copy: ", tiled_copy);
+        Copy_Atom<UniversalCopy<uint128_t>, T>{},
+        thr_layout,
+        val_layout
+    );
 
     // cal gird and block dimensions
     dim3 gridDim(
-        size<0>(ceil_div(tensor_shape, cta_tiler)),
-        size<1>(ceil_div(tensor_shape, cta_tiler))
+        size<0>(ceil_div(global_tensor_shape, block_shape)),
+        size<1>(ceil_div(global_tensor_shape, block_shape))
     );
-    dim3 blockDim(size(thr_layout));
-    printf("Grid: (%d, %d), Block: %d\n", gridDim.x, gridDim.y, blockDim.x);
+    dim3 blockDim(size(tiled_copy));
 
     // Launch the kernel
-    copy_kernel_vectorized<<< gridDim, blockDim >>>(
+    tiled_copy_kernel<<< gridDim, blockDim >>>(
         tensor_S,
         tensor_D,
-        cta_tiler,
+        block_shape,
         tiled_copy);
+}
 
-    cudaDeviceSynchronize();
-    h_D = d_D;
-    print_tensor_with_label("tensor_D: ", make_tensor(h_D.data(), tensor_shape));
+template <cbu::matrix_layout dst_layout>
+void test_matrix_copy()
+{
+    using namespace cbu;
+
+    std::string dst_major = dst_layout == matrix_layout::row_major ? "row major" : "col major";
+    std::cout << "-------------- matrix dst in " << dst_major << " --------------\n";
+
+    using dtype = float;
+    using d_vec = thrust::device_vector<dtype>;
+
+    size_t secs = 10;
+    size_t m = 20 * 1024, n = 5 * 1024; // 100M elements
+
+    size_t size = m * n;
+    std::vector<dtype> h_src(size), h_dst(size);
+    random_fill(h_src);
+
+    d_vec d_src = h_src;
+    d_vec d_dst(size);
+
+    std::cout << "copy_ref:\n";
+    if (dst_layout == matrix_layout::col_major)
+    {
+        benchmark_func_by_time(secs, [&] { matrix_transpose_ref<dtype>(h_src, h_dst, m, n); });
+    }
+    else
+    {
+        benchmark_func_by_time(secs, [&] { std::copy(h_src.begin(), h_src.end(), h_dst.begin()); });
+    }
+
+    using func_t = std::function<void(d_vec&, d_vec&, size_t, size_t)>;
+    std::vector<std::tuple<std::string, func_t>> funcs{
+        {"tiled_copy", tiled_copy<dtype, dst_layout>},
+    };
+
+    for (const auto& [func_name,func] : funcs)
+    {
+        std::cout << "\n" << func_name << ":\n";
+        fill(d_dst.begin(), d_dst.end(), 0);
+        benchmark_func_by_time(secs, [&]()
+        {
+            func(d_src, d_dst, m, n);
+            cuda_check(cudaDeviceSynchronize());
+        });
+        cuda_acc_check(h_dst, d_dst);
+    }
+}
+
+/// Main function
+int main()
+{
+    test_matrix_copy<cbu::matrix_layout::row_major>();
+    // test_matrix_copy<cbu::matrix_layout::col_major>();
 }

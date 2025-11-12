@@ -31,7 +31,47 @@ __global__ void tiled_copy_kernel(TensorS S, TensorD D, CtaTiler cta_tiler, Tile
     copy(tiled_copy, fragment, thr_tile_D);
 }
 
-template <typename T, cbu::matrix_layout dst_layout>
+namespace
+{
+    using namespace cute;
+
+    template <bool Vectorized, bool Coalesced, typename T>
+    struct CopyConfig;
+
+    template <typename T>
+    struct CopyConfig<true, true, T>
+    {
+        using CopyAtom = Copy_Atom<UniversalCopy<uint128_t>, T>;
+        using ThrLayout = decltype(make_layout(make_shape(Int<32>{}, Int<8>{}), LayoutRight{}));
+        using ValLayout = decltype(make_layout(make_shape(Int<1>{}, Int<4>{})));
+    };
+
+    template <typename T>
+    struct CopyConfig<false, true, T>
+    {
+        using CopyAtom = Copy_Atom<UniversalCopy<T>, T>;
+        using ThrLayout = decltype(make_layout(make_shape(Int<32>{}, Int<8>{}), LayoutRight{}));
+        using ValLayout = decltype(make_layout(make_shape(Int<1>{}, Int<4>{})));
+    };
+
+    template <typename T>
+    struct CopyConfig<true, false, T>
+    {
+        using CopyAtom = Copy_Atom<UniversalCopy<uint128_t>, T>;
+        using ThrLayout = decltype(make_layout(make_shape(Int<32>{}, Int<8>{})));
+        using ValLayout = decltype(make_layout(make_shape(Int<1>{}, Int<4>{})));
+    };
+
+    template <typename T>
+    struct CopyConfig<false, false, T>
+    {
+        using CopyAtom = Copy_Atom<UniversalCopy<T>, T>;
+        using ThrLayout = decltype(make_layout(make_shape(Int<32>{}, Int<8>{})));
+        using ValLayout = decltype(make_layout(make_shape(Int<1>{}, Int<4>{})));
+    };
+}
+
+template <typename T, bool vectorized, bool coalesced>
 void tiled_copy(
     thrust::device_vector<T>& src,
     thrust::device_vector<T>& dst,
@@ -40,16 +80,10 @@ void tiled_copy(
 {
     using namespace cute;
 
-    using DstLayout = std::conditional_t<
-        dst_layout == cbu::matrix_layout::row_major,
-        LayoutRight,
-        LayoutLeft
-    >;
-
     // warp global tensors
     Shape global_tensor_shape = make_shape(m, n);
     Layout layout_src = make_layout(global_tensor_shape, LayoutRight{}); // row-major
-    Layout layout_dst = make_layout(global_tensor_shape, DstLayout{});
+    Layout layout_dst = make_layout(global_tensor_shape, LayoutRight{}); // row-major
     Tensor tensor_S = make_tensor(make_gmem_ptr(thrust::raw_pointer_cast(src.data())), layout_src);
     Tensor tensor_D = make_tensor(make_gmem_ptr(thrust::raw_pointer_cast(dst.data())), layout_dst);
 
@@ -61,13 +95,19 @@ void tiled_copy(
         return;
     }
 
-    auto thr_layout = make_layout(make_shape(Int<32>{}, Int<8>{}), LayoutRight{}); // 256 threads
-    auto val_layout = make_layout(make_shape(Int<1>{}, Int<4>{})); // each thread copy 4 elements at a time
+    using copy_config = CopyConfig<vectorized, coalesced, T>;
     TiledCopy tiled_copy = make_tiled_copy(
-        Copy_Atom<UniversalCopy<uint128_t>, T>{},
-        thr_layout,
-        val_layout
+        typename copy_config::CopyAtom{},
+        typename copy_config::ThrLayout{},
+        typename copy_config::ValLayout{}
     );
+
+    // // Debug info
+    // std::string latex_file = "tiled_copy_"
+    //     + std::string(vectorized ? "vec" : "novec") + "_"
+    //     + std::string(coalesced ? "coal" : "nocoal") + ".latex";
+    // print_latex_to_file(latex_file, tiled_copy);
+    // print_with_label("Tiled Copy: ", tiled_copy);
 
     // cal gird and block dimensions
     dim3 gridDim(
@@ -84,13 +124,9 @@ void tiled_copy(
         tiled_copy);
 }
 
-template <cbu::matrix_layout dst_layout>
-void test_matrix_copy()
+int main()
 {
     using namespace cbu;
-
-    std::string dst_major = dst_layout == matrix_layout::row_major ? "row major" : "col major";
-    std::cout << "-------------- matrix dst in " << dst_major << " --------------\n";
 
     using dtype = float;
     using d_vec = thrust::device_vector<dtype>;
@@ -106,18 +142,14 @@ void test_matrix_copy()
     d_vec d_dst(size);
 
     std::cout << "copy_ref:\n";
-    if (dst_layout == matrix_layout::col_major)
-    {
-        benchmark_func_by_time(secs, [&] { matrix_transpose_ref<dtype>(h_src, h_dst, m, n); });
-    }
-    else
-    {
-        benchmark_func_by_time(secs, [&] { std::copy(h_src.begin(), h_src.end(), h_dst.begin()); });
-    }
+    benchmark_func_by_time(secs, [&] { std::copy(h_src.begin(), h_src.end(), h_dst.begin()); });
 
     using func_t = std::function<void(d_vec&, d_vec&, size_t, size_t)>;
     std::vector<std::tuple<std::string, func_t>> funcs{
-        {"tiled_copy", tiled_copy<dtype, dst_layout>},
+        {"tiled_copy (vectorized, coalesced)", tiled_copy<dtype, true, true>},
+        {"tiled_copy (non-vectorized, coalesced)", tiled_copy<dtype, false, true>},
+        {"tiled_copy (vectorized, non-coalesced)", tiled_copy<dtype, true, false>},
+        {"tiled_copy (non-vectorized, non-coalesced)", tiled_copy<dtype, false, false>},
     };
 
     for (const auto& [func_name,func] : funcs)
@@ -131,11 +163,4 @@ void test_matrix_copy()
         });
         cuda_acc_check(h_dst, d_dst);
     }
-}
-
-/// Main function
-int main()
-{
-    test_matrix_copy<cbu::matrix_layout::row_major>();
-    // test_matrix_copy<cbu::matrix_layout::col_major>();
 }

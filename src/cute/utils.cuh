@@ -2,11 +2,11 @@
 
 #include <cute/tensor.hpp>
 
-void print_with_label(const char* label, const auto& copy)
+void print_with_label(const char* label, const auto& cute_obj)
 {
     using namespace cute;
     print(label);
-    print(copy);
+    print(cute_obj);
     print("\n");
 }
 

@@ -35,14 +35,14 @@ namespace
 {
     using namespace cute;
 
-    template <bool Vectorized, bool Coalesced, typename T>
+    template <bool vectorized, bool coalesced, typename T>
     struct CopyConfig;
 
     template <typename T>
     struct CopyConfig<true, true, T>
     {
         using CopyAtom = Copy_Atom<UniversalCopy<uint128_t>, T>;
-        using ThrLayout = decltype(make_layout(make_shape(Int<32>{}, Int<8>{}), LayoutRight{}));
+        using ThrLayout = decltype(make_layout(make_shape(Int<8>{}, Int<32>{}), LayoutRight{}));
         using ValLayout = decltype(make_layout(make_shape(Int<1>{}, Int<4>{})));
     };
 
@@ -50,7 +50,7 @@ namespace
     struct CopyConfig<false, true, T>
     {
         using CopyAtom = Copy_Atom<UniversalCopy<T>, T>;
-        using ThrLayout = decltype(make_layout(make_shape(Int<32>{}, Int<8>{}), LayoutRight{}));
+        using ThrLayout = decltype(make_layout(make_shape(Int<8>{}, Int<32>{}), LayoutRight{}));
         using ValLayout = decltype(make_layout(make_shape(Int<1>{}, Int<4>{})));
     };
 
@@ -58,7 +58,7 @@ namespace
     struct CopyConfig<true, false, T>
     {
         using CopyAtom = Copy_Atom<UniversalCopy<uint128_t>, T>;
-        using ThrLayout = decltype(make_layout(make_shape(Int<32>{}, Int<8>{})));
+        using ThrLayout = decltype(make_layout(make_shape(Int<8>{}, Int<32>{})));
         using ValLayout = decltype(make_layout(make_shape(Int<1>{}, Int<4>{})));
     };
 
@@ -66,7 +66,7 @@ namespace
     struct CopyConfig<false, false, T>
     {
         using CopyAtom = Copy_Atom<UniversalCopy<T>, T>;
-        using ThrLayout = decltype(make_layout(make_shape(Int<32>{}, Int<8>{})));
+        using ThrLayout = decltype(make_layout(make_shape(Int<8>{}, Int<32>{})));
         using ValLayout = decltype(make_layout(make_shape(Int<1>{}, Int<4>{})));
     };
 }
@@ -88,7 +88,7 @@ void tiled_copy(
     Tensor tensor_D = make_tensor(make_gmem_ptr(thrust::raw_pointer_cast(dst.data())), layout_dst);
 
     // block tile shape / cta tiler
-    auto block_shape = make_shape(Int<128>{}, Int<64>{});
+    auto block_shape = make_shape(Int<64>{}, Int<128>{});
     if (not evenly_divides(global_tensor_shape, block_shape))
     {
         std::cerr << "Expected the block_shape to evenly divide the global tensor shape." << std::endl;

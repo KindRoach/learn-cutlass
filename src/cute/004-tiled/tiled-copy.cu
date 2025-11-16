@@ -109,7 +109,7 @@ void tiled_copy(
     if (not evenly_divides(global_tensor_shape, block_shape))
     {
         std::cerr << "Expected the block_shape to evenly divide the global tensor shape." << std::endl;
-        return;
+        exit(1);
     }
 
     using copy_config = CopyConfig<vectorized, coalesced, T>;
@@ -118,6 +118,11 @@ void tiled_copy(
         typename copy_config::ThrLayout{},
         typename copy_config::ValLayout{}
     );
+    if (not evenly_divides(block_shape, typename decltype(tiled_copy)::Tiler_MN{}))
+    {
+        std::cerr << "Expected the tiled copy tiler to evenly divide the block_shape." << std::endl;
+        exit(1);
+    }
 
     if (cbu::is_debug)
     {

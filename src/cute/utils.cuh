@@ -2,6 +2,7 @@
 
 #include <cute/tensor.hpp>
 
+__host__ __device__
 void print_with_label(const char* label, const auto& cute_obj)
 {
     using namespace cute;
@@ -10,6 +11,7 @@ void print_with_label(const char* label, const auto& cute_obj)
     print("\n");
 }
 
+__host__ __device__
 void print_layout_with_label(const char* label, const auto& layout)
 {
     using namespace cute;

@@ -3,6 +3,7 @@
 #include <thrust/host_vector.h>
 
 #include "cpp-bench-utils/utils.hpp"
+#include "cute/utils.cuh"
 
 // A : [m,k] in row-major
 // B : [k,n] in row-major or col-major
@@ -54,36 +55,35 @@ void cute_gemm_kernel(
     Tensor tCgC = local_partition(gC, tC, threadIdx.x, Step<_1, _1>{}); // (THR_M,THR_N)
     Tensor tCrC = make_tensor_like(tCgC); // (THR_M,THR_N)
 
-    // // Debug info
-    // if (thread(1))
-    // {
-    //     printf("=================== CUTE GEMM KERNEL START ==================\n\n");
-    //     printf("Grid: (%d,%d), Block: (%d), Thread: (%d)\n\n",
-    //            gridDim.x, gridDim.y,
-    //            blockDim.x,
-    //            threadIdx.x
-    //     );
-    //
-    //     print_tensor_with_label("mA : ", mA);
-    //     print_tensor_with_label("gA : ", gA);
-    //     print_tensor_with_label("sA : ", sA);
-    //     print_tensor_with_label("tAgA : ", tAgA);
-    //     print_tensor_with_label("tAsA : ", tAsA);
-    //
-    //     print_tensor_with_label("mB : ", mB);
-    //     print_tensor_with_label("gB : ", gB);
-    //     print_tensor_with_label("sB : ", sB);
-    //     print_tensor_with_label("tBgB : ", tBgB);
-    //     print_tensor_with_label("tBsB : ", tBsB);
-    //
-    //     print_tensor_with_label("mC : ", mC);
-    //     print_tensor_with_label("gC : ", gC);
-    //     print_tensor_with_label("tCsA : ", tCsA);
-    //     print_tensor_with_label("tCsB : ", tCsB);
-    //     print_tensor_with_label("tCgC : ", tCgC);
-    //     print_tensor_with_label("tCrC : ", tCrC);
-    //     printf("=================== CUTE GEMM KERNEL END ====================\n\n");
-    // }
+    if (cbu::is_debug and thread(1))
+    {
+        printf("=================== CUTE GEMM KERNEL START ==================\n\n");
+        printf("Grid: (%d,%d), Block: (%d), Thread: (%d)\n\n",
+               gridDim.x, gridDim.y,
+               blockDim.x,
+               threadIdx.x
+        );
+
+        print_tensor_with_label("mA : ", mA);
+        print_tensor_with_label("gA : ", gA);
+        print_tensor_with_label("sA : ", sA);
+        print_tensor_with_label("tAgA : ", tAgA);
+        print_tensor_with_label("tAsA : ", tAsA);
+
+        print_tensor_with_label("mB : ", mB);
+        print_tensor_with_label("gB : ", gB);
+        print_tensor_with_label("sB : ", sB);
+        print_tensor_with_label("tBgB : ", tBgB);
+        print_tensor_with_label("tBsB : ", tBsB);
+
+        print_tensor_with_label("mC : ", mC);
+        print_tensor_with_label("gC : ", gC);
+        print_tensor_with_label("tCsA : ", tCsA);
+        print_tensor_with_label("tCsB : ", tCsB);
+        print_tensor_with_label("tCgC : ", tCgC);
+        print_tensor_with_label("tCrC : ", tCrC);
+        printf("=================== CUTE GEMM KERNEL END ====================\n\n");
+    }
 
     // Mainloop
     auto K_TILE_MAX = size<2>(tAgA);
@@ -171,23 +171,25 @@ void cute_gemm(
     );
     cudaDeviceSynchronize();
 
-    // // Debug info
-    // std::cout << "CTA Tiler: " << cta_tiler << "\n\n";
-    //
-    // print_layout_with_label("Layout mA: ", mA_layout);
-    // print_layout_with_label("Layout mB: ", mB_layout);
-    // print_layout_with_label("Layout mC: ", mC_layout);
-    //
-    // print_layout_with_label("Layout sA: ", sA_layout);
-    // print_layout_with_label("Layout sB: ", sB_layout);
-    //
-    // print_layout_with_label("Layout tA: ", tA_layout);
-    // print_layout_with_label("Layout tB: ", tB_layout);
-    // print_layout_with_label("Layout tC: ", tC_layout);
-    //
-    // thrust::host_vector<T> host_c = c;
-    // auto mC = make_tensor(host_c.data(), mC_layout);
-    // print_tensor_with_label("Result mC: ", mC);
+    if (cbu::is_debug)
+    {
+        std::cout << "CTA Tiler: " << cta_tiler << "\n\n";
+
+        print_layout_with_label("Layout mA: ", mA_layout);
+        print_layout_with_label("Layout mB: ", mB_layout);
+        print_layout_with_label("Layout mC: ", mC_layout);
+
+        print_layout_with_label("Layout sA: ", sA_layout);
+        print_layout_with_label("Layout sB: ", sB_layout);
+
+        print_layout_with_label("Layout tA: ", tA_layout);
+        print_layout_with_label("Layout tB: ", tB_layout);
+        print_layout_with_label("Layout tC: ", tC_layout);
+
+        thrust::host_vector<T> host_c = c;
+        auto mC = make_tensor(host_c.data(), mC_layout);
+        print_tensor_with_label("Result mC: ", mC);
+    }
 }
 
 template <cbu::matrix_layout b_layout>
@@ -200,7 +202,7 @@ void test_matrix_multiply()
 
     using dtype = float;
     using d_vec = thrust::device_vector<dtype>;
-    size_t secs = 10;
+    size_t secs = is_debug ? 0 : 10;
 
     // // small case
     // size_t m = 8, n = 12, k = 16;

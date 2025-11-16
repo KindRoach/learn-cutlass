@@ -14,21 +14,38 @@ __global__ void tiled_copy_kernel(TensorS S, TensorD D, CtaTiler cta_tiler, Tile
 
     // Get the appropriate blocks for this thread block
     auto cta_coord = make_coord(blockIdx.x, blockIdx.y);
-    Tensor tile_S = local_tile(S, cta_tiler, cta_coord); // (BLK_M,BLK_K,k)
-    Tensor tile_D = local_tile(D, cta_tiler, cta_coord); // (BLK_N,BLK_K,k)
+    Tensor tile_S = local_tile(S, cta_tiler, cta_coord); // (BLK_M,BLK_N)
+    Tensor tile_D = local_tile(D, cta_tiler, cta_coord); // (BLK_M,BLK_N)
 
     // Construct a Tensor corresponding to each thread's slice.
     ThrCopy thr_copy = tiled_copy.get_thread_slice(threadIdx.x);
-    Tensor thr_tile_S = thr_copy.partition_S(tile_S); // (CopyOp, CopyM, CopyN)
-    Tensor thr_tile_D = thr_copy.partition_D(tile_D); // (CopyOp, CopyM, CopyN)
+    Tensor thr_tile_S = thr_copy.partition_S(tile_S); // (BLK_M/Thr_M * BLK_N/Thr_N)
+    Tensor thr_tile_D = thr_copy.partition_D(tile_D); // (BLK_M/Thr_M * BLK_N/Thr_N)
 
     // Construct a register-backed Tensor with the same shape as each thread's partition
     // Use make_fragment because the first mode is the instruction-local mode
-    Tensor fragment = make_fragment_like(thr_tile_D); // (CopyOp, CopyM, CopyN)
+    Tensor fragment = make_fragment_like(thr_tile_D); // (BLK_M/Thr_M * BLK_N/Thr_N)
 
-    // Copy from GMEM to RMEM and from RMEM to GMEM
+    // Copy: GMEM -> RMEM -> GMEM
     copy(tiled_copy, thr_tile_S, fragment);
     copy(tiled_copy, fragment, thr_tile_D);
+
+    if (cbu::is_debug and thread(1))
+    {
+        printf("=================== KERNEL START ==================\n\n");
+        printf("Grid: (%d,%d), Block: (%d), Thread: (%d)\n\n",
+               gridDim.x, gridDim.y,
+               blockDim.x,
+               threadIdx.x
+        );
+
+        print_with_label("CTA Tile S: ", tile_S);
+        print_with_label("CTA Tile D: ", tile_D);
+        print_with_label("Thread Tile S: ", thr_tile_S);
+        print_with_label("Thread Tile D: ", thr_tile_D);
+
+        printf("=================== KERNEL END ==================\n\n");
+    }
 }
 
 namespace
@@ -102,12 +119,14 @@ void tiled_copy(
         typename copy_config::ValLayout{}
     );
 
-    // // Debug info
-    // std::string latex_file = "tiled_copy_"
-    //     + std::string(vectorized ? "vec" : "novec") + "_"
-    //     + std::string(coalesced ? "coal" : "nocoal") + ".latex";
-    // print_latex_to_file(latex_file, tiled_copy);
-    // print_with_label("Tiled Copy: ", tiled_copy);
+    if (cbu::is_debug)
+    {
+        std::string latex_file = "tiled_copy_"
+            + std::string(vectorized ? "vec" : "novec") + "_"
+            + std::string(coalesced ? "coal" : "nocoal") + ".latex";
+        print_latex_to_file(latex_file, tiled_copy);
+        print_with_label("Tiled Copy: ", tiled_copy);
+    }
 
     // cal gird and block dimensions
     dim3 gridDim(
@@ -131,7 +150,7 @@ int main()
     using dtype = float;
     using d_vec = thrust::device_vector<dtype>;
 
-    size_t secs = 10;
+    size_t secs = is_debug ? 0 : 10;
     size_t m = 20 * 1024, n = 5 * 1024; // 100M elements
 
     size_t size = m * n;

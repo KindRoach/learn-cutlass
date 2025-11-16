@@ -144,7 +144,8 @@ void cute_gemm(
 
     // Define the thread layouts (static)
     auto tA_layout = make_layout(make_shape(Int<tM>{}, Int<tK>{}));
-    auto tB_layout = make_layout(make_shape(Int<tN>{}, Int<tK>{}), BLayout{}); // use BLayout to avoid uncoalesced access
+    auto tB_layout = make_layout(make_shape(Int<tN>{}, Int<tK>{}), BLayout{});
+    // use BLayout to avoid uncoalesced access
     auto tC_layout = make_layout(make_shape(Int<tCM>{}, Int<tCN>{}));
 
     // Validate that the thread tile sizes are the same
@@ -256,11 +257,18 @@ void test_matrix_multiply()
     {
         std::cout << "\n" << func_name << ":\n";
         fill(d_c.begin(), d_c.end(), 0);
-        benchmark_func_by_time(secs, [&]()
-        {
-            func(d_a, d_b, d_c, m, n, k);
-            cuda_check(cudaDeviceSynchronize());
-        });
+        benchmark_func_by_time(
+            secs,
+            [&]()
+            {
+                func(d_a, d_b, d_c, m, n, k);
+                cuda_check(cudaDeviceSynchronize());
+            },
+            {
+                .total_mem_bytes = sizeof(dtype) * (m * k + k * n + m * n),
+                .total_flop = 2 * m * n * k,
+            }
+        );
         cuda_acc_check(c, d_c);
     }
 }

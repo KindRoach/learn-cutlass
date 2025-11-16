@@ -180,11 +180,17 @@ int main()
     {
         std::cout << "\n" << func_name << ":\n";
         fill(d_dst.begin(), d_dst.end(), 0);
-        benchmark_func_by_time(secs, [&]()
-        {
-            func(d_src, d_dst, m, n);
-            cuda_check(cudaDeviceSynchronize());
-        });
+        benchmark_func_by_time(
+            secs,
+            [&]
+            {
+                func(d_src, d_dst, m, n);
+                cuda_check(cudaDeviceSynchronize());
+            },
+            {
+                .total_mem_bytes = sizeof(dtype) * size * 2
+            }
+        );
         cuda_acc_check(h_dst, d_dst);
     }
 }

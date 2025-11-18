@@ -140,12 +140,13 @@ void cute_gemm(
 
     // Define the smem layouts (static)
     auto sA_layout = make_layout(make_shape(Int<bM>{}, Int<bK>{}));
-    auto sB_layout = make_layout(make_shape(Int<bN>{}, Int<bK>{}), BLayout{}); // use BLayout to avoid bank conflict
+    // use BLayout to avoid bank conflict
+    auto sB_layout = make_layout(make_shape(Int<bN>{}, Int<bK>{}), BLayout{});
 
     // Define the thread layouts (static)
     auto tA_layout = make_layout(make_shape(Int<tM>{}, Int<tK>{}));
+    // use BLayout to avoid un-coalesced access
     auto tB_layout = make_layout(make_shape(Int<tN>{}, Int<tK>{}), BLayout{});
-    // use BLayout to avoid uncoalesced access
     auto tC_layout = make_layout(make_shape(Int<tCM>{}, Int<tCN>{}));
 
     // Validate that the thread tile sizes are the same

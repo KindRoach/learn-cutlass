@@ -2,7 +2,12 @@
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 
+#include "cpp-bench-utils/utils.hpp"
 #include "cute/utils.cuh"
+
+// A : [m,k] in row-major
+// B : [k,n] in row-major or col-major
+// C = A x B : [m,n] in row-major
 
 template <
     class T, class ProblemShape, class CtaTiler,
@@ -60,7 +65,7 @@ void cute_gemm_kernel(
     clear(tCrC);
 
     // Debug info
-    if (thread0())
+    if (cbu::is_debug and thread(1))
     {
         printf("=================== CUTE GEMM KERNEL START ==================\n\n");
         printf("Grid: (%d,%d), Block: (%d), Thread: (%d)\n\n",
@@ -113,13 +118,8 @@ void cute_gemm_kernel(
     axpby(alpha, tCrC, beta, tCgC);
 }
 
-template <
-    class T,
-    size_t bM, size_t bN, size_t bK,
-    size_t tM, size_t tN, size_t tK,
-    size_t tCM, size_t tCN
->
-void cute_gemm(
+template <class T, cbu::matrix_layout b_layout>
+void matrix_multiply_tiled_mma(
     thrust::device_vector<T>& a,
     thrust::device_vector<T>& b,
     thrust::device_vector<T>& c,
@@ -127,34 +127,41 @@ void cute_gemm(
 )
 {
     using namespace cute;
+    using namespace cbu;
 
     // all in row-major
     // c [m,n] = a [m,k] x b [k,n]
     auto prob_shape = make_shape(m, n, k);
 
     // device memory layouts (dynamic)
-    auto mA_layout = make_layout(make_shape(m, k), LayoutRight{});
-    auto mB_layout = make_layout(make_shape(n, k), LayoutLeft{});
-    auto mC_layout = make_layout(make_shape(m, n), LayoutRight{});
+    using BLayout = std::conditional_t<
+        b_layout == matrix_layout::row_major,
+        LayoutLeft,
+        LayoutRight
+    >;
+    auto mA_layout = make_layout(make_shape(m, k), LayoutRight{}); // row-major
+    auto mB_layout = make_layout(make_shape(n, k), BLayout{}); // row or col-major
+    auto mC_layout = make_layout(make_shape(m, n), LayoutRight{}); // row-major
+
+    constexpr size_t bM = 128, bN = 128, bK = 8;
 
     // cta tile (static)
     auto cta_tiler = Shape<Int<bM>, Int<bN>, Int<bK>>{};
-    std::cout << "CTA Tiler: " << cta_tiler << "\n\n";
 
     // Define the smem layouts (static)
-    auto sA_layout = Layout<Shape<Int<bM>, Int<bK>>>{};
-    auto sB_layout = Layout<Shape<Int<bN>, Int<bK>>>{};
+    auto sA_layout = Layout<Shape<Int<bM>, Int<bK>>, Stride<Int<bK>, Int<1>>>{};
+    auto sB_layout = Layout<Shape<Int<bN>, Int<bK>>, Stride<Int<bK>, Int<1>>>{};
 
     TiledCopy copyA = make_tiled_copy(
         Copy_Atom<UniversalCopy<T>, T>{},
-        Layout<Shape<_32, _8>>{}, // Thr layout 32x8 m-major
-        Layout<Shape<_1, _2>>{} // Val layout  4x1 m-major
+        Layout<Shape<_32, _8>, Stride<_8, _1>>{},
+        Layout<Shape<_1, _1>>{}
     );
 
     TiledCopy copyB = make_tiled_copy(
         Copy_Atom<UniversalCopy<T>, T>{},
-        Layout<Shape<_32, _8>>{}, // Thr layout 32x8 n-major
-        Layout<Shape<_1, _2>>{} // Val layout  4x1 n-major
+        Layout<Shape<_32, _8>, Stride<_8, _1>>{},
+        Layout<Shape<_1, _1>>{}
     );
 
     TiledMMA mmaC = make_tiled_mma(
@@ -162,17 +169,21 @@ void cute_gemm(
         Layout<Shape<_16, _16, _1>>{} // 16x16x1 UniversalFMA
     );
 
-    // Debug info
-    print_layout_with_label("Layout mA: ", mA_layout);
-    print_layout_with_label("Layout mB: ", mB_layout);
-    print_layout_with_label("Layout mC: ", mC_layout);
+    if (is_debug)
+    {
+        std::cout << "CTA Tiler: " << cta_tiler << "\n\n";
 
-    print_layout_with_label("Layout sA: ", sA_layout);
-    print_layout_with_label("Layout sB: ", sB_layout);
+        print_layout_with_label("Layout mA: ", mA_layout);
+        print_layout_with_label("Layout mB: ", mB_layout);
+        print_layout_with_label("Layout mC: ", mC_layout);
 
-    print_with_label("copyA: ", copyA);
-    print_with_label("copyB: ", copyB);
-    print_with_label("mmaC: ", mmaC);
+        print_layout_with_label("Layout sA: ", sA_layout);
+        print_layout_with_label("Layout sB: ", sB_layout);
+
+        print_with_label("copyA: ", copyA);
+        print_with_label("copyB: ", copyB);
+        print_with_label("mmaC: ", mmaC);
+    }
 
     // launch kernel
     dim3 dimBlock(size(mmaC));
@@ -185,39 +196,61 @@ void cute_gemm(
         static_cast<T>(1.0), static_cast<T>(0.0)
     );
     cudaDeviceSynchronize();
+}
 
-    // copy back to host and print result
-    thrust::host_vector<T> host_c = c;
-    auto mC = make_tensor(host_c.data(), mC_layout);
-    print_tensor_with_label("Result mC: ", mC);
+template <cbu::matrix_layout b_layout>
+void test_matrix_multiply()
+{
+    using namespace cbu;
+
+    std::string b_major = b_layout == matrix_layout::row_major ? "row major" : "col major";
+    std::cout << "-------------- matrix b in " << b_major << " --------------\n";
+
+    using dtype = float;
+    using d_vec = thrust::device_vector<dtype>;
+    size_t secs = is_debug ? 0 : 10;
+
+    // huge case
+    size_t m = 2 * 1024, n = 512, k = 1024;
+
+    std::vector<dtype> a(m * k), b(k * n), c(m * n);
+    random_fill(a);
+    random_fill(b);
+
+    std::cout << "matrix_multiply_ref:\n";
+    BenchmarkOptions opt{
+        .total_mem_bytes = (m * k + k * n + m * n) * sizeof(dtype),
+        .total_flop = 2 * m * n * k,
+    };
+    benchmark_func_by_time(secs, [&]
+    {
+        matrix_multiply_ref<dtype, b_layout>(a, b, c, m, n, k);
+    }, opt);
+
+    d_vec d_a = a;
+    d_vec d_b = b;
+    d_vec d_c(c.size());
+
+    using func_t = std::function<void(d_vec&, d_vec&, d_vec&, size_t, size_t, size_t)>;
+    std::vector<std::tuple<std::string, func_t>> funcs{
+        {"matrix_multiply_tiled_mma", matrix_multiply_tiled_mma<dtype, b_layout>},
+    };
+
+    for (const auto& [func_name,func] : funcs)
+    {
+        std::cout << "\n" << func_name << ":\n";
+        fill(d_c.begin(), d_c.end(), 0);
+        benchmark_func_by_time(secs, [&]()
+        {
+            func(d_a, d_b, d_c, m, n, k);
+            cuda_check(cudaDeviceSynchronize());
+        }, opt);
+        cuda_acc_check(c, d_c);
+    }
 }
 
 int main()
 {
-    using dtype = float;
-    using d_vec = thrust::device_vector<dtype>;
-
-    size_t m = 64, n = 96, k = 128;
-    constexpr size_t bM = 32, bN = 32, bK = 16;
-    constexpr size_t tM = 32, tN = 32, tK = 8;
-    constexpr size_t tCM = 16, tCN = 16;
-
-    std::vector<dtype> a(m * k), b(k * n);
-
-    for (int i = 0; i < a.size(); ++i)
-        a[i] = static_cast<dtype>(i % 255);
-
-    for (int i = 0; i < b.size(); ++i)
-        b[i] = static_cast<dtype>(i % 127);
-
-    d_vec d_a = a;
-    d_vec d_b = b;
-    d_vec d_c(m * n);
-
-    cute_gemm<
-        dtype,
-        bM, bN, bK,
-        tM, tN, tK,
-        tCM, tCN
-    >(d_a, d_b, d_c, m, n, k);
+    test_matrix_multiply<cbu::matrix_layout::row_major>();
+    test_matrix_multiply<cbu::matrix_layout::col_major>();
 }

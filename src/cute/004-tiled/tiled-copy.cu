@@ -58,7 +58,7 @@ namespace
     template <typename T>
     struct CopyConfig<true, true, T>
     {
-        using CopyAtom = Copy_Atom<UniversalCopy<uint128_t>, T>;
+        using CopyAtom = Copy_Atom<UniversalCopy<uint_byte_t<sizeof(T) * 4>>, T>;
         using ThrLayout = decltype(make_layout(make_shape(Int<8>{}, Int<32>{}), LayoutRight{}));
         using ValLayout = decltype(make_layout(make_shape(Int<1>{}, Int<4>{})));
     };
@@ -74,7 +74,7 @@ namespace
     template <typename T>
     struct CopyConfig<true, false, T>
     {
-        using CopyAtom = Copy_Atom<UniversalCopy<uint128_t>, T>;
+        using CopyAtom = Copy_Atom<UniversalCopy<uint_byte_t<sizeof(T) * 4>>, T>;
         using ThrLayout = decltype(make_layout(make_shape(Int<8>{}, Int<32>{})));
         using ValLayout = decltype(make_layout(make_shape(Int<1>{}, Int<4>{})));
     };
@@ -164,9 +164,6 @@ int main()
 
     d_vec d_src = h_src;
     d_vec d_dst(size);
-
-    std::cout << "copy_ref:\n";
-    benchmark_func_by_time(secs, [&] { std::copy(h_src.begin(), h_src.end(), h_dst.begin()); });
 
     using func_t = std::function<void(d_vec&, d_vec&, size_t, size_t)>;
     std::vector<std::tuple<std::string, func_t>> funcs{

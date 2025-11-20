@@ -74,24 +74,24 @@ void cute_gemm_kernel(
                threadIdx.x
         );
 
-        print_tensor_with_label("mA : ", mA);
-        print_tensor_with_label("gA : ", gA);
-        print_tensor_with_label("sA : ", sA);
-        print_tensor_with_label("tAgA : ", tAgA);
-        print_tensor_with_label("tAsA : ", tAsA);
+        print_with_label("mA : ", mA);
+        print_with_label("gA : ", gA);
+        print_with_label("sA : ", sA);
+        print_with_label("tAgA : ", tAgA);
+        print_with_label("tAsA : ", tAsA);
 
-        print_tensor_with_label("mB : ", mB);
-        print_tensor_with_label("gB : ", gB);
-        print_tensor_with_label("sB : ", sB);
-        print_tensor_with_label("tBgB : ", tBgB);
-        print_tensor_with_label("tBsB : ", tBsB);
+        print_with_label("mB : ", mB);
+        print_with_label("gB : ", gB);
+        print_with_label("sB : ", sB);
+        print_with_label("tBgB : ", tBgB);
+        print_with_label("tBsB : ", tBsB);
 
-        print_tensor_with_label("mC : ", mC);
-        print_tensor_with_label("gC : ", gC);
-        print_tensor_with_label("tCsA : ", tCsA);
-        print_tensor_with_label("tCsB : ", tCsB);
-        print_tensor_with_label("tCgC : ", tCgC);
-        print_tensor_with_label("tCrC : ", tCrC);
+        print_with_label("mC : ", mC);
+        print_with_label("gC : ", gC);
+        print_with_label("tCsA : ", tCsA);
+        print_with_label("tCsB : ", tCsB);
+        print_with_label("tCgC : ", tCgC);
+        print_with_label("tCrC : ", tCrC);
         printf("=================== CUTE GEMM KERNEL END ====================\n\n");
     }
 
@@ -165,21 +165,35 @@ void matrix_multiply_tiled_mma(
         make_layout(make_shape(_1{}, _1{}))
     );
 
+    if (not evenly_divides(shape(sA_layout), typename decltype(copyA)::Tiler_MN{})
+        or not evenly_divides(shape(sB_layout), typename decltype(copyB)::Tiler_MN{}))
+    {
+        std::cerr << "Expected the tiled copy tiler to evenly divide the smem_shape." << std::endl;
+        exit(1);
+    }
+
     TiledMMA mmaC = make_tiled_mma(
         UniversalFMA<T>{},
         Layout<Shape<_16, _16, _1>>{} // 16x16x1 UniversalFMA
     );
 
+    if (size(mmaC) != size(typename decltype(copyA)::TiledNumThr{})
+        or size(mmaC) != size(typename decltype(copyB)::TiledNumThr{}))
+    {
+        std::cerr << "Expected the tiled_copy thread num equals tiled_mma's" << std::endl;
+        exit(1);
+    }
+
     if (is_debug)
     {
         std::cout << "CTA Tiler: " << cta_tiler << "\n\n";
 
-        print_layout_with_label("Layout mA: ", mA_layout);
-        print_layout_with_label("Layout mB: ", mB_layout);
-        print_layout_with_label("Layout mC: ", mC_layout);
+        print_with_label("Layout mA: ", mA_layout);
+        print_with_label("Layout mB: ", mB_layout);
+        print_with_label("Layout mC: ", mC_layout);
 
-        print_layout_with_label("Layout sA: ", sA_layout);
-        print_layout_with_label("Layout sB: ", sB_layout);
+        print_with_label("Layout sA: ", sA_layout);
+        print_with_label("Layout sB: ", sB_layout);
 
         print_with_label("copyA: ", copyA);
         print_with_label("copyB: ", copyB);

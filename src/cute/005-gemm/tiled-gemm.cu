@@ -111,7 +111,8 @@ void cute_gemm_kernel(
 
         // Compute gemm on mma-partitioned smem
         gemm(mma_c, tCsA, tCsB, tCrC);
-        __syncthreads();
+
+        // No __syncthreads() need here until next copy to smem
     }
 
     // Epilogue
@@ -134,13 +135,13 @@ void matrix_multiply_tiled_mma(
     auto prob_shape = make_shape(m, n, k);
 
     // device memory layouts (dynamic)
-    using BLayout = std::conditional_t<
+    using BStride = std::conditional_t<
         b_layout == matrix_layout::row_major,
         LayoutLeft,
         LayoutRight
     >;
     auto mA_layout = make_layout(make_shape(m, k), LayoutRight{}); // row-major
-    auto mB_layout = make_layout(make_shape(n, k), BLayout{}); // row or col-major
+    auto mB_layout = make_layout(make_shape(n, k), BStride{}); // row or col-major
     auto mC_layout = make_layout(make_shape(m, n), LayoutRight{}); // row-major
 
     constexpr size_t bM = 128, bN = 128, bK = 8;
@@ -149,19 +150,19 @@ void matrix_multiply_tiled_mma(
     auto cta_tiler = Shape<Int<bM>, Int<bN>, Int<bK>>{};
 
     // Define the smem layouts (static)
-    auto sA_layout = Layout<Shape<Int<bM>, Int<bK>>, Stride<Int<bK>, Int<1>>>{};
-    auto sB_layout = Layout<Shape<Int<bN>, Int<bK>>, Stride<Int<bK>, Int<1>>>{};
+    auto sA_layout = make_layout(make_shape(Int<bM>{}, Int<bK>{}), LayoutRight{});
+    auto sB_layout = make_layout(make_shape(Int<bN>{}, Int<bK>{}), BStride{});
 
     TiledCopy copyA = make_tiled_copy(
         Copy_Atom<UniversalCopy<T>, T>{},
-        Layout<Shape<_32, _8>, Stride<_8, _1>>{},
-        Layout<Shape<_1, _1>>{}
+        make_layout(make_shape(_32{}, _8{}), LayoutRight{}),
+        make_layout(make_shape(_1{}, _1{}))
     );
 
     TiledCopy copyB = make_tiled_copy(
         Copy_Atom<UniversalCopy<T>, T>{},
-        Layout<Shape<_32, _8>, Stride<_8, _1>>{},
-        Layout<Shape<_1, _1>>{}
+        make_layout(make_shape(_32{}, _8{}), BStride{}),
+        make_layout(make_shape(_1{}, _1{}))
     );
 
     TiledMMA mmaC = make_tiled_mma(

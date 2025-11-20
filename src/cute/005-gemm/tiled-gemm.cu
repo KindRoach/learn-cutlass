@@ -207,7 +207,7 @@ void test_matrix_multiply()
     std::string b_major = b_layout == matrix_layout::row_major ? "row major" : "col major";
     std::cout << "-------------- matrix b in " << b_major << " --------------\n";
 
-    using dtype = float;
+    using dtype = cute::half_t;
     using d_vec = thrust::device_vector<dtype>;
     size_t secs = is_debug ? 0 : 10;
 
@@ -240,7 +240,7 @@ void test_matrix_multiply()
     for (const auto& [func_name,func] : funcs)
     {
         std::cout << "\n" << func_name << ":\n";
-        fill(d_c.begin(), d_c.end(), 0);
+        fill(d_c.begin(), d_c.end(), static_cast<dtype>(0));
         benchmark_func_by_time(secs, [&]()
         {
             func(d_a, d_b, d_c, m, n, k);

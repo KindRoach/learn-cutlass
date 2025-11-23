@@ -14,12 +14,6 @@ foreach (file_path ${sources})
     # Extract executable name (from filename without extension)
     get_filename_component(target_name "${file_path}" NAME_WE)
 
-    # Extract the directory of the file
-    get_filename_component(target_dir "${file_path}" DIRECTORY)
-
-    # Compute relative path to src root for output placement
-    file(RELATIVE_PATH target_dir "${src_root}" "${target_dir}")
-
     # Add target
     add_executable("${target_name}" "${file_path}")
 
@@ -30,8 +24,18 @@ foreach (file_path ${sources})
             "${CMAKE_SOURCE_DIR}/cutlass/tools/util/include"
     )
 
+    if (MSVC)
+        target_compile_options("${target_name}" PRIVATE "$<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=/bigobj>")
+    endif ()
+
     # Set CUDA architectures
     set_property(TARGET ${target_name} PROPERTY CUDA_ARCHITECTURES native)
+
+    # Extract the directory of the file
+    get_filename_component(target_dir "${file_path}" DIRECTORY)
+
+    # Compute relative path to src root for output placement
+    file(RELATIVE_PATH target_dir "${src_root}" "${target_dir}")
 
     set_target_properties("${target_name}" PROPERTIES
             RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${target_dir}"

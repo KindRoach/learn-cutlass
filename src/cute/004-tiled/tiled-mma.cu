@@ -63,28 +63,26 @@ void tiled_mma_kernel(
     }
 }
 
-
-int main()
+template <size_t m, size_t n, size_t k, typename T, class TiledMMA>
+void tiled_mma_example()
 {
     using namespace cbu;
     using namespace cute;
 
-    using dtype = float;
-    constexpr size_t m = 8, n = 6, k = 4;
-    std::vector<dtype> a(m * k), b(n * k), c(m * n);
+    std::vector<T> a(m * k), b(n * k), c(m * n);
 
     for (int i = 0; i < a.size(); ++i)
     {
-        a[i] = static_cast<dtype>(i);
+        a[i] = static_cast<T>(i * 0.01);
     }
 
     for (int i = 0; i < b.size(); ++i)
     {
-        b[i] = static_cast<dtype>(i);
+        b[i] = static_cast<T>(i * 0.01);
     }
 
-    matrix_multiply_ref<dtype, cbu::matrix_layout::col_major>(a, b, c, m, n, k);
-    thrust::device_vector<dtype> d_a = a, d_b = b, d_c(m * n);
+    matrix_multiply_ref<T, matrix_layout::col_major>(a, b, c, m, n, k);
+    thrust::device_vector<T> d_a = a, d_b = b, d_c(m * n);
 
     Layout mA_layout = make_layout(make_shape(Int<m>{}, Int<k>{}), LayoutRight{});
     Layout mB_layout = make_layout(make_shape(Int<n>{}, Int<k>{}), LayoutRight{});
@@ -93,10 +91,7 @@ int main()
     Layout sA_layout = make_layout(make_shape(Int<m>{}, Int<k>{}));
     Layout sB_layout = make_layout(make_shape(Int<n>{}, Int<k>{}));
 
-    TiledMMA mma = make_tiled_mma(
-        UniversalFMA<dtype>{},
-        Layout<Shape<Int<m/2>, Int<n/2>, _1>>{}
-    );
+    TiledMMA mma{};
 
     // launch kernel
     dim3 dimBlock(size(mma));
@@ -107,7 +102,51 @@ int main()
         d_c.data().get(), mC_layout,
         mma
     );
-    cudaDeviceSynchronize();
 
+    cudaDeviceSynchronize();
     cuda_acc_check(c, d_c);
+}
+
+template <size_t m, size_t n, size_t k>
+void universal_fma_example()
+{
+    std::cout << "Universal FMA Tiled MMA Example (M=" << m << ", N=" << n << ", K=" << k << ")\n";
+
+    using namespace cute;
+    using dtype = float;
+
+    TiledMMA mma = make_tiled_mma(
+        UniversalFMA<dtype>{},
+        Layout<Shape<Int<m / 2>, Int<n / 2>, _1>>{}
+    );
+
+    tiled_mma_example<m, n, k, dtype, decltype(mma)>();
+}
+
+
+template <size_t atom_m, size_t atom_n>
+void tensor_core_mma_example()
+{
+    using namespace cute;
+    using dtype = half_t;
+
+    constexpr size_t m = atom_m * 16;
+    constexpr size_t n = atom_n * 8;
+    constexpr size_t k = 16;
+
+    std::cout << "Tensor Core MMA Tiled MMA Example (M=" << m << ", N=" << n << ", K=" << k << ")\n";
+
+    TiledMMA mma = make_tiled_mma(
+        SM80_16x8x16_F16F16F16F16_TN{},
+        Layout<Shape<Int<atom_m>, Int<atom_n>>>{}, // MMA Atoms layouts
+        Tile<Int<m>, Int<n>, Int<k>>{} // Tile Layout
+    );
+
+    tiled_mma_example<m, n, k, dtype, decltype(mma)>();
+}
+
+int main()
+{
+    universal_fma_example<8, 6, 4>();
+    tensor_core_mma_example<2, 2>();
 }

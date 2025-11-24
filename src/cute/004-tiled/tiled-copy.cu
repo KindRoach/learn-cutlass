@@ -105,7 +105,7 @@ void tiled_copy(
     Tensor tensor_D = make_tensor(make_gmem_ptr(thrust::raw_pointer_cast(dst.data())), layout_dst);
 
     // block tile shape / cta tiler
-    auto block_shape = make_shape(Int<64>{}, Int<128>{});
+    auto block_shape = make_shape(Int<8>{}, Int<128>{});
     if (not evenly_divides(global_tensor_shape, block_shape))
     {
         std::cerr << "Expected the block_shape to evenly divide the global tensor shape." << std::endl;
@@ -159,7 +159,7 @@ int main()
     size_t m = 20 * 1024, n = 5 * 1024; // 100M elements
 
     size_t size = m * n;
-    std::vector<dtype> h_src(size), h_dst(size);
+    std::vector<dtype> h_src(size);
     random_fill(h_src);
 
     d_vec d_src = h_src;
@@ -188,6 +188,6 @@ int main()
                 .total_mem_bytes = sizeof(dtype) * size * 2
             }
         );
-        cuda_acc_check(h_dst, d_dst);
+        cuda_acc_check(h_src, d_dst);
     }
 }

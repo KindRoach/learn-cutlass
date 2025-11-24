@@ -210,7 +210,6 @@ void matrix_multiply_tiled_mma(
         c.data().get(), mC_layout, mmaC,
         static_cast<T>(1.0), static_cast<T>(0.0)
     );
-    cudaDeviceSynchronize();
 }
 
 template <cbu::matrix_layout b_layout>

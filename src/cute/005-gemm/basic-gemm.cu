@@ -64,24 +64,24 @@ void cute_gemm_kernel(
                threadIdx.x
         );
 
-        print_tensor_with_label("mA : ", mA);
-        print_tensor_with_label("gA : ", gA);
-        print_tensor_with_label("sA : ", sA);
-        print_tensor_with_label("tAgA : ", tAgA);
-        print_tensor_with_label("tAsA : ", tAsA);
+        print_with_label("mA : ", mA);
+        print_with_label("gA : ", gA);
+        print_with_label("sA : ", sA);
+        print_with_label("tAgA : ", tAgA);
+        print_with_label("tAsA : ", tAsA);
 
-        print_tensor_with_label("mB : ", mB);
-        print_tensor_with_label("gB : ", gB);
-        print_tensor_with_label("sB : ", sB);
-        print_tensor_with_label("tBgB : ", tBgB);
-        print_tensor_with_label("tBsB : ", tBsB);
+        print_with_label("mB : ", mB);
+        print_with_label("gB : ", gB);
+        print_with_label("sB : ", sB);
+        print_with_label("tBgB : ", tBgB);
+        print_with_label("tBsB : ", tBsB);
 
-        print_tensor_with_label("mC : ", mC);
-        print_tensor_with_label("gC : ", gC);
-        print_tensor_with_label("tCsA : ", tCsA);
-        print_tensor_with_label("tCsB : ", tCsB);
-        print_tensor_with_label("tCgC : ", tCgC);
-        print_tensor_with_label("tCrC : ", tCrC);
+        print_with_label("mC : ", mC);
+        print_with_label("gC : ", gC);
+        print_with_label("tCsA : ", tCsA);
+        print_with_label("tCsB : ", tCsB);
+        print_with_label("tCgC : ", tCgC);
+        print_with_label("tCrC : ", tCrC);
         printf("=================== CUTE GEMM KERNEL END ====================\n\n");
     }
 
@@ -161,18 +161,6 @@ void cute_gemm(
     static_assert(size<0>(cta_tiler) % size<0>(tC_layout) == _0{});
     static_assert(size<1>(cta_tiler) % size<1>(tC_layout) == _0{});
 
-    // launch kernel
-    dim3 dimBlock(size(tA_layout));
-    dim3 dimGrid(size(ceil_div(m, Int<bM>{})), size(ceil_div(n, Int<bN>{})));
-    cute_gemm_kernel<<<dimGrid, dimBlock>>>(
-        prob_shape, cta_tiler,
-        a.data().get(), mA_layout, sA_layout, tA_layout,
-        b.data().get(), mB_layout, sB_layout, tB_layout,
-        c.data().get(), mC_layout, tC_layout,
-        static_cast<T>(1.0), static_cast<T>(0.0)
-    );
-    cudaDeviceSynchronize();
-
     if (cbu::is_debug)
     {
         std::cout << "CTA Tiler: " << cta_tiler << "\n\n";
@@ -187,11 +175,18 @@ void cute_gemm(
         print_layout_with_label("Layout tA: ", tA_layout);
         print_layout_with_label("Layout tB: ", tB_layout);
         print_layout_with_label("Layout tC: ", tC_layout);
-
-        thrust::host_vector<T> host_c = c;
-        auto mC = make_tensor(host_c.data(), mC_layout);
-        print_tensor_with_label("Result mC: ", mC);
     }
+
+    // launch kernel
+    dim3 dimBlock(size(tA_layout));
+    dim3 dimGrid(size(ceil_div(m, Int<bM>{})), size(ceil_div(n, Int<bN>{})));
+    cute_gemm_kernel<<<dimGrid, dimBlock>>>(
+        prob_shape, cta_tiler,
+        a.data().get(), mA_layout, sA_layout, tA_layout,
+        b.data().get(), mB_layout, sB_layout, tB_layout,
+        c.data().get(), mC_layout, tC_layout,
+        static_cast<T>(1.0), static_cast<T>(0.0)
+    );
 }
 
 template <cbu::matrix_layout b_layout>
